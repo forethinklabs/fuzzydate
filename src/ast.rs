@@ -527,9 +527,9 @@ impl Duration {
         }
     }
 
-    fn convertable(&self) -> bool {
+    fn safely_convertable(&self) -> bool {
         if let Duration::Concat(dur1, dur2) = self {
-            return dur1.convertable() && dur2.convertable();
+            return dur1.safely_convertable() && dur2.safely_convertable();
         }
 
         let unit = self.unit();
@@ -549,7 +549,8 @@ impl Duration {
             Unit::Week => ChronoDuration::weeks(num as i64),
             Unit::Hour => ChronoDuration::hours(num as i64),
             Unit::Minute => ChronoDuration::minutes(num as i64),
-            _ => unreachable!(),
+            Unit::Month => ChronoDuration::days(num as i64 * 30),
+            Unit::Year => ChronoDuration::days(num as i64 * 365),
         }
     }
 
@@ -558,23 +559,11 @@ impl Duration {
             return dur2.after(dur1.after(date));
         }
 
-        if self.convertable() {
+        if self.safely_convertable() {
             date + self.to_chrono()
         } else {
-            match self.unit() {
-                Unit::Month => {
-                    if date.month() == 12 {
-                        date.with_month(1)
-                            .unwrap()
-                            .with_year(date.year() + 1)
-                            .unwrap()
-                    } else {
-                        date.with_month(date.month() + self.num()).unwrap()
-                    }
-                }
-                Unit::Year => date.with_year(date.year() + self.num() as i32).unwrap(),
-                _ => unreachable!(),
-            }
+            self.after_semantic(date)
+                .unwrap_or_else(|| date + self.to_chrono())
         }
     }
 
@@ -583,23 +572,50 @@ impl Duration {
             return dur2.before(dur1.before(date));
         }
 
-        if self.convertable() {
+        if self.safely_convertable() {
             date - self.to_chrono()
         } else {
-            match self.unit() {
-                Unit::Month => {
-                    if date.month() == 1 {
-                        date.with_month(12)
-                            .unwrap()
-                            .with_year(date.year() - 1 as i32)
-                            .unwrap()
-                    } else {
-                        date.with_month(date.month() - self.num()).unwrap()
-                    }
+            self.before_semantic(date)
+                .unwrap_or_else(|| date - self.to_chrono())
+        }
+    }
+    fn before_semantic(&self, date: ChronoDateTime) -> Option<ChronoDateTime> {
+        match self.unit() {
+            Unit::Month => {
+                let mut months = self.num();
+                let mut updated_date = date;
+                // e.g. 1 = January, diff = 2
+                // adjust by moving back a year
+                while updated_date.month() <= months {
+                    months -= updated_date.month();
+                    updated_date = updated_date
+                        .with_year(updated_date.year() - 1)?
+                        .with_month(12)?;
                 }
-                Unit::Year => date.with_year(date.year() - self.num() as i32).unwrap(),
-                _ => unreachable!(),
+
+                updated_date.with_month(updated_date.month() - months)
             }
+            Unit::Year => date.with_year(date.year() - self.num() as i32),
+            _ => None,
+        }
+    }
+    fn after_semantic(&self, date: ChronoDateTime) -> Option<ChronoDateTime> {
+        match self.unit() {
+            Unit::Month => {
+                let mut months = self.num();
+                let mut updated_date = date;
+                // e.g. 1 = January, diff = +13
+                // adjust by moving forward a year
+                while updated_date.month() + months > 12 {
+                    months -= 12 - updated_date.month();
+                    updated_date = updated_date
+                        .with_year(updated_date.year() + 1)?
+                        .with_month(1)?;
+                }
+                updated_date.with_month(updated_date.month() + months)
+            }
+            Unit::Year => date.with_year(date.year() + self.num() as i32),
+            _ => None,
         }
     }
 }
