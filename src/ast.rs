@@ -126,6 +126,7 @@ pub enum Date {
     MonthDayYear(Month, u32, u32),
     MonthNumDay(u32, u32),
     MonthDay(Month, u32),
+    UnitRelative(RelativeSpecifier, Unit),
     Relative(RelativeSpecifier, Weekday),
     Weekday(Weekday),
     Today,
@@ -176,6 +177,11 @@ impl Date {
             if let Some((weekday, t)) = Weekday::parse(&l[tokens..]) {
                 tokens += t;
                 return Some((Self::Relative(relspec, weekday), tokens));
+            }
+
+            if let Some((unit, t)) = Unit::parse(&l[tokens..]) {
+                tokens += t;
+                return Some((Self::UnitRelative(relspec, unit), tokens));
             }
         } else if let Some((weekday, t)) = Weekday::parse(&l[tokens..]) {
             tokens += t;
@@ -276,6 +282,19 @@ impl Date {
                 }
 
                 today
+            }
+            Date::UnitRelative(relspec, unit) => {
+                let today = Local::now().naive_local();
+                let mut date = today.date();
+                if relspec == &RelativeSpecifier::Next {
+                    date = Duration::Specific(1, unit.to_owned()).after(today).date();
+                }
+
+                if relspec == &RelativeSpecifier::Last {
+                    date = Duration::Specific(1, unit.to_owned()).before(today).date();
+                }
+
+                date
             }
             Date::Weekday(weekday) => {
                 let weekday = weekday.to_chrono();
@@ -620,7 +639,7 @@ impl Duration {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Unit {
     Day,
     Week,
@@ -1200,6 +1219,118 @@ mod tests {
         assert_eq!(date.year(), today.year() + 1);
         assert_eq!(date.month(), 10);
         assert_eq!(date.day(), 5);
+    }
+
+    #[test]
+    fn test_next_week() {
+        let l = vec![Lexeme::Next, Lexeme::Week];
+
+        let today = Local::now().naive_local();
+        let (date, _) = DateTime::parse(l.as_slice()).unwrap();
+        let date = date.to_chrono(today.time()).unwrap();
+
+        assert_eq!(date, today + ChronoDuration::weeks(1));
+    }
+
+    #[test]
+    fn test_next_month() {
+        let l = vec![Lexeme::Next, Lexeme::Month];
+
+        let today = Local::now().naive_local();
+        let (date, _) = DateTime::parse(l.as_slice()).unwrap();
+        let date = date.to_chrono(today.time()).unwrap();
+
+        assert_eq!(
+            date,
+            today
+                .checked_add_months(chrono::Months::new(1))
+                .expect("Adding one month to current date shouldn't be the end of time.")
+        );
+    }
+
+    #[test]
+    fn test_next_year() {
+        let l = vec![Lexeme::Next, Lexeme::Year];
+
+        let today = Local::now().naive_local();
+        let (date, _) = DateTime::parse(l.as_slice()).unwrap();
+        let date = date.to_chrono(today.time()).unwrap();
+
+        assert_eq!(
+            date,
+            today
+                .with_year(today.year() + 1)
+                .expect("Adding one year to current date shouldn't be the end of time.")
+        );
+    }
+
+    #[test]
+    fn test_last_week() {
+        let l = vec![Lexeme::Last, Lexeme::Week];
+
+        let today = Local::now().naive_local();
+        let (date, _) = DateTime::parse(l.as_slice()).unwrap();
+        let date = date.to_chrono(today.time()).unwrap();
+
+        assert_eq!(date, today - ChronoDuration::weeks(1));
+    }
+
+    #[test]
+    fn test_last_month() {
+        let l = vec![Lexeme::Last, Lexeme::Month];
+
+        let today = Local::now().naive_local();
+        let (date, _) = DateTime::parse(l.as_slice()).unwrap();
+        let date = date.to_chrono(today.time()).unwrap();
+
+        assert_eq!(
+            date,
+            today
+                .checked_sub_months(chrono::Months::new(1))
+                .expect("Subtracting one month to current date shouldn't be the end of time.")
+        );
+    }
+
+    #[test]
+    fn test_last_year() {
+        let l = vec![Lexeme::Last, Lexeme::Year];
+
+        let today = Local::now().naive_local();
+        let (date, _) = DateTime::parse(l.as_slice()).unwrap();
+        let date = date.to_chrono(today.time()).unwrap();
+
+        assert_eq!(
+            date,
+            today
+                .with_year(today.year() - 1)
+                .expect("Subtracting one year to current date shouldn't be the end of time.")
+        );
+    }
+
+    #[test]
+    fn test_month_literals_with_time_and_year() {
+        use chrono::Timelike;
+
+        let lexemes = vec![
+            Lexeme::February,
+            Lexeme::Num(16),
+            Lexeme::Num(2022),
+            Lexeme::Comma,
+            Lexeme::Num(5),
+            Lexeme::Colon,
+            Lexeme::Num(27),
+            Lexeme::PM,
+        ];
+
+        let (date, t) = DateTime::parse(lexemes.as_slice()).unwrap();
+        let date = date.to_chrono(Local::now().naive_local().time()).unwrap();
+
+        assert_eq!(t, 8);
+        assert_eq!(date.year(), 2022);
+        assert_eq!(date.month(), 2);
+        assert_eq!(date.day(), 16);
+        assert_eq!(date.hour(), 17);
+        assert_eq!(date.minute(), 27);
     }
 
     #[test_case(None; "default reference time")]
