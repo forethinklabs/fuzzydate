@@ -284,14 +284,17 @@ impl Date {
                 today
             }
             Date::UnitRelative(relspec, unit) => {
-                let today = Local::now().naive_local();
-                let mut date = today.date();
+                let mut date = today;
                 if relspec == &RelativeSpecifier::Next {
-                    date = Duration::Specific(1, unit.to_owned()).after(today).date();
+                    date = Duration::Specific(1, unit.to_owned())
+                        .after(today.and_time(Default::default()))
+                        .date();
                 }
 
                 if relspec == &RelativeSpecifier::Last {
-                    date = Duration::Specific(1, unit.to_owned()).before(today).date();
+                    date = Duration::Specific(1, unit.to_owned())
+                        .before(today.and_time(Default::default()))
+                        .date();
                 }
 
                 date
@@ -1227,7 +1230,7 @@ mod tests {
 
         let today = Local::now().naive_local();
         let (date, _) = DateTime::parse(l.as_slice()).unwrap();
-        let date = date.to_chrono(today.time()).unwrap();
+        let date = date.to_chrono(today.time(), None).unwrap();
 
         assert_eq!(date, today + ChronoDuration::weeks(1));
     }
@@ -1238,7 +1241,7 @@ mod tests {
 
         let today = Local::now().naive_local();
         let (date, _) = DateTime::parse(l.as_slice()).unwrap();
-        let date = date.to_chrono(today.time()).unwrap();
+        let date = date.to_chrono(today.time(), None).unwrap();
 
         assert_eq!(
             date,
@@ -1254,7 +1257,7 @@ mod tests {
 
         let today = Local::now().naive_local();
         let (date, _) = DateTime::parse(l.as_slice()).unwrap();
-        let date = date.to_chrono(today.time()).unwrap();
+        let date = date.to_chrono(today.time(), None).unwrap();
 
         assert_eq!(
             date,
@@ -1270,7 +1273,7 @@ mod tests {
 
         let today = Local::now().naive_local();
         let (date, _) = DateTime::parse(l.as_slice()).unwrap();
-        let date = date.to_chrono(today.time()).unwrap();
+        let date = date.to_chrono(today.time(), None).unwrap();
 
         assert_eq!(date, today - ChronoDuration::weeks(1));
     }
@@ -1281,7 +1284,7 @@ mod tests {
 
         let today = Local::now().naive_local();
         let (date, _) = DateTime::parse(l.as_slice()).unwrap();
-        let date = date.to_chrono(today.time()).unwrap();
+        let date = date.to_chrono(today.time(), None).unwrap();
 
         assert_eq!(
             date,
@@ -1297,7 +1300,7 @@ mod tests {
 
         let today = Local::now().naive_local();
         let (date, _) = DateTime::parse(l.as_slice()).unwrap();
-        let date = date.to_chrono(today.time()).unwrap();
+        let date = date.to_chrono(today.time(), None).unwrap();
 
         assert_eq!(
             date,
@@ -1323,7 +1326,9 @@ mod tests {
         ];
 
         let (date, t) = DateTime::parse(lexemes.as_slice()).unwrap();
-        let date = date.to_chrono(Local::now().naive_local().time()).unwrap();
+        let date = date
+            .to_chrono(Local::now().naive_local().time(), None)
+            .unwrap();
 
         assert_eq!(t, 8);
         assert_eq!(date.year(), 2022);
@@ -1380,7 +1385,7 @@ mod tests {
     }
 
     #[test]
-    fn test_month_literals_with_time_and_year() {
+    fn test_month_literals_with_time_and_year_2() {
         use chrono::Timelike;
 
         let lexemes = vec![
